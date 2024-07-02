@@ -13,7 +13,7 @@ font_color = (0, 100, 0)  # BGR Color
 font_weight = 2
 
 
-f = h5py.File(pictures_file, "r")
+f = h5py.File(pictures_file, "r+")
 start_pos = 0
 if sit_key in f.keys():
 	start_pos = len(f[sit_key])
@@ -42,11 +42,11 @@ while i < tot_pics - start_pos:
     if key_input == ord("q"):
         break
 tags = np.array(tags, dtype=bool)
-if sit_key in f.keys():
+if sit_key not in f.keys():
     f.create_dataset(sit_key, data=tags, chunks=True, maxshape=(None,))
 else:
-    dset.resize(dset.shape[0] + len(tags), axis=0)
-    dset[start_pos:] = tags
+    f[sit_key].resize(dset.shape[0] + len(tags), axis=0)
+    f[sit_key][start_pos:] = tags
 
 cv2.destroyAllWindows()
 del f
