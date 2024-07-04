@@ -2,7 +2,7 @@ import cv2
 import time
 import numpy as np
 from gpiozero import Button
-from picamera2 import Picamera2
+# from picamera2 import Picamera2
 import h5py
 
 # Note, to make tensorflow lite work on bullfrog, have to use python -m pip install --upgrade tflite-support==0.4.3
