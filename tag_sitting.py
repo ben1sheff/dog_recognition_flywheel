@@ -27,7 +27,7 @@ i = 0
 while i < tot_pics - start_pos:
     image = dset[start_pos + i]
 
-    cv2.putText(image, "Hit S for sitting, D for just being a dog",
+    cv2.putText(image, "pic " + str(i + start_pos) + "Hit S for sitting, D for just being a dog",
                 font_pos, cv2.FONT_HERSHEY_SIMPLEX, font_size, 
                 font_color, font_weight)
     cv2.imshow("dog", image)
@@ -45,7 +45,7 @@ tags = np.array(tags, dtype=bool)
 if sit_key not in f.keys():
     f.create_dataset(sit_key, data=tags, chunks=True, maxshape=(None,))
 else:
-    f[sit_key].resize(dset.shape[0] + len(tags), axis=0)
+    f[sit_key].resize(f[sit_key].shape[0] + len(tags), axis=0)
     f[sit_key][start_pos:] = tags
 
 cv2.destroyAllWindows()

@@ -12,7 +12,7 @@ import utils
 models = "efficientdet_lite0.tflite"
 # Parameters
 # Where is the camera? usually this works, but sometimes you have to find it with v4l2-ctl --list-devices
-webcam = "/dev/video1"
+webcam = "/dev/video0"
 # Threading for TF
 num_threads = 4
 # Display parameters
