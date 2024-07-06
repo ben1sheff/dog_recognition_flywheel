@@ -8,8 +8,8 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 class StanceClassifier(nn.Module):
     def __init__(self, model_dim: (int, int)):
         super().__init__()
-        conv1_feat = 5
-        conv2_feat = 5
+        conv1_feat = 10
+        conv2_feat = 20
         k_size = 3
         self.pool_size = 3
         self.conv1 = nn.Conv2d(1, conv1_feat, k_size, 1)

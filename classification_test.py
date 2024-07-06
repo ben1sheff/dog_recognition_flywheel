@@ -31,12 +31,12 @@ dset = list(zip(dset, tags))
 
 classifier = sc.StanceClassifier((512, 512))
 criterion = nn.BCELoss()
-# optimizer = optim.Adam(classifier.parameters(), lr=0.01)
-optimizer = optim.SGD(classifier.parameters(), lr=0.001, momentum=0.9)
+optimizer = optim.Adam(classifier.parameters(), lr=0.001)
+# optimizer = optim.SGD(classifier.parameters(), lr=0.001, momentum=0.9)
 
 trainloader = torch.utils.data.DataLoader(dset, batch_size=batch_size,
                                           shuffle=True, num_workers=2)
-for epoch in range(10):
+for epoch in range(100):
     running_loss = 0.0
     for i, data in enumerate(trainloader, 0):
         # get the inputs; data is a list of [inputs, labels]
@@ -47,20 +47,28 @@ for epoch in range(10):
 
         # forward + backward + optimize
         outputs = classifier(inputs)
-        print(labels, outputs)
+        # print(labels, outputs)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
 
         # print statistics
         running_loss += loss.item()
-        if True: # i % 2000 == 1999:    # print every 2000 mini-batches
+        if i % 20 == 19:    # print every 2000 mini-batches
             print(f'\n[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
             running_loss = 0.0
 
 print('Finished Training')
 # print(classifier(torch.tensor([dog[0] for dog in dset])))
+tot = len(dset)
+correct = 0
+sit_guesses = 0
 for dog, tag in zip(dset, tags):
     result = classifier(torch.Tensor(dog[0][None,:,:]))
-    print(result.item()>0.5, tag.item()>0.5)
-
+    if (result.item() > 0.5) == (tag.item() > 0.5):
+        correct += 1
+    if result.item() > 0.5:
+        sit_guesses += 1
+    # print(result.item()>0.5, tag.item()>0.5)
+print(correct/tot * 100, "percent correct")
+print("guessed sit", sit_guesses / tot * 100., "percent of the time")
