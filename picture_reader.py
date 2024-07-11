@@ -3,7 +3,7 @@ import time
 import numpy as np
 import h5py
 # File to read pictures from
-pictures_file = "pictures.hdf5"
+pictures_file = "stream_data.hdf5"  # "pictures.hdf5"
 dset_name = "pics"
 sit_key = "sitting"
 # Font Settings
@@ -13,7 +13,9 @@ font_color = (0, 100, 0)  # BGR Color
 font_weight = 2
 
 
-f = h5py.File(pictures_file, "r")
+f = h5py.File(pictures_file, "r+")
+dset = f[dset_name]
+tags = f[sit_key]
 print("so far we have", len(f[dset_name]), "pictures")
 
 num_tags = 0
@@ -23,17 +25,29 @@ if sit_key in f.keys():
 key_input = ord("n")
 picture_ind = -1 # int(np.random.random() * len(f[dset_name]))
 exit_flag = False
+re_save_flag = False
 while not exit_flag:
+    if key_input == ord("c"):
+        dset = np.concat([dset[:picture_ind], dset[picture_ind+1:]])  # check for end-of-file errors
+        tags = np.concat([tags[:picture_ind], tags[picture_ind+1:]])
+        key_input = ord("n")
+        picture_ind -= 1
+    if key_input == ord("s"):
+        re_save_flag = True
+        key_input = ord("q")
     if key_input == ord("q"):
         exit_flag = True
+    if key_input == ord("b"):
+        picture_ind -= 2
+        key_input = ord("n")
     if key_input == ord("n"):
-        picture_ind = (picture_ind + 1) % len(f[dset_name])  #int(np.random.random() * len(f[dset_name]))
-        image = f[dset_name][picture_ind]
+        picture_ind = (picture_ind + 1) % len(dset)  #int(np.random.random() * len(f[dset_name]))
+        image = dset[picture_ind]
 
         # Add the tags if we have them
         if picture_ind < num_tags:
             tag_text = "dog is standing"
-            if f[sit_key][picture_ind]:
+            if tags[picture_ind]:
                 tag_text = "dog is sitting"
             cv2.putText(image, tag_text,
                         (font_pos[0], font_pos[1] + 30),
@@ -46,4 +60,10 @@ while not exit_flag:
     key_input = cv2.waitKey(5)
 
 cv2.destroyAllWindows()
+if re_save_flag:
+    f[dset_name].resize(dset.shape[0], axis=0)
+    f[dset_name][:] = dset[:]
+    sit_set = f[sit_key]
+    f[sit_key].resize(tags.shape[0], axis=0)
+    f[sit_key][:] = tags[:]
 del f

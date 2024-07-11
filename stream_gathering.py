@@ -96,11 +96,11 @@ def get_grayscaled_dog(image, det_objects=None, img_size=pic_dim):
                                              square_side, square_side))]]
     if len(dog_bounds):
         dog_bounds = max(dog_bounds)[1]
-        printv(dog_bounds)
+        # printv(dog_bounds)
         dog_area = cv2.resize(image[dog_bounds[1]:dog_bounds[1]+dog_bounds[3],
                                     dog_bounds[0]:dog_bounds[0]+dog_bounds[2]], (pic_dim, pic_dim))
         return cv2.cvtColor(dog_area, cv2.COLOR_BGR2GRAY)
-    return False
+    return None
 
 
 
@@ -137,11 +137,11 @@ while not exit_flag:
     det_objs = tflite_obj_det(image)
     # Do something with the data
     # Find the dog and photograph him
-    if deal_with_pictures and take_pic_flag:
+    if deal_with_pictures_flag and take_pic_flag:
         dog_img = get_grayscaled_dog(image, det_objs)
-        if dog_img:
+        if dog_img is not None:
             cv2.imshow("picture", dog_img)
-            pictures += [image_gray]
+            pictures += [dog_img]
             sitting += [sitting_state]
             printv("dog", len(pictures), "noted, this time he is", "" if sitting_state else "not", "sitting")
         else:
