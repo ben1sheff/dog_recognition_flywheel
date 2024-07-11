@@ -1,6 +1,6 @@
 import cv2
 import torch
-import torchvision.transforms as transforms
+from transformers import DetrImageProcessor, DetrForObjectDetection
 import h5py
 import time
 import numpy as np
@@ -8,9 +8,9 @@ import torch.optim as optim
 import torch.nn as nn
 from gpiozero import Button, LED
 
-# Note, to make tensorflow lite work on bullfrog, have to use python -m pip install --upgrade tflite-support==0.4.3
-from tflite_support.task import core, processor, vision
-import utils
+# # Note, to make tensorflow lite work on bullfrog, have to use python -m pip install --upgrade tflite-support==0.4.3
+# from tflite_support.task import core, processor, vision
+# import utils
 
 import stance_classifier as sc
 # TO DO: this currenty just draws a train vs. validation plot to
@@ -27,6 +27,9 @@ webcam = "/dev/video0"
 # TF
 models = "efficientdet_lite0.tflite"
 num_threads = 4
+# DETR object detection
+img_processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
+object_detector = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50")
 # Display parameters
 dispW = 1280  # 1280  # 640 # 
 dispH = 720  # 720  # 480  #
@@ -41,11 +44,11 @@ font_color = (0, 155, 0)
 verbose = True
 printv = lambda *args, **kwargs: print(*args, **kwargs) if verbose else None
 
-# Setting up object detection
-base_options = core.BaseOptions(file_name=models, use_coral=False, num_threads=num_threads)
-detection_options = processor.DetectionOptions(max_results=4, score_threshold = 0.3) # how many objects, how sure to be
-options = vision.ObjectDetectorOptions(base_options=base_options, detection_options=detection_options)
-detector = vision.ObjectDetector.create_from_options(options)
+# # Setting up object detection
+# base_options = core.BaseOptions(file_name=models, use_coral=False, num_threads=num_threads)
+# detection_options = processor.DetectionOptions(max_results=4, score_threshold = 0.3) # how many objects, how sure to be
+# options = vision.ObjectDetectorOptions(base_options=base_options, detection_options=detection_options)
+# detector = vision.ObjectDetector.create_from_options(options)
 
 # Initialize the button
 button = Button(18)
@@ -70,15 +73,68 @@ dset = list(zip(dset, tags))
 classifier = sc.StanceClassifier((512, 512))
 classifier.load_state_dict(torch.load(model_param_file))
 def is_sitting(image, cutoff=confidence_req):
-    return classifier(torch.Tensor(image[None,:,:])).item() > cutoff
+    with torch.no_grad():
+        return classifier(torch.Tensor(image[None,:,:])).item() > cutoff
 
 
-# Using Tensorflow lite for object detection
-def tflite_obj_det(image, color_conv=cv2.COLOR_BGR2RGB):
-    ''' Returns an object holding a list of detected objects '''
+# function for object detection
+class DetectedObjects():
+    ''' 
+    class to read in object classification to ease
+    uniformity between tflite and pytorch
+    '''
+    class SingleDetection():
+        def __init__(self, label, score, box):
+            self.label = label
+            self.score = score
+            self.box = box
+    def __init__(self, labels, scores, boxes):
+        n = len(labels)
+        self.labels = labels
+        self.scores = scores
+        self.boxes = boxes
+        self.size = len(self.labels)
+    def conv_xyxy_xywh(self):
+        ''' Since convert from xmin, ymin, xmax, ymax to x, y, width, height '''
+        self.boxes = np.array([
+            [x, y, xmax - x, ymax - y] for x, y, xmax, ymax in self.boxes])
+    def __iter__(self):
+        self.i = 0
+        return self
+    def __next__(self):
+        if self.i >= self.size:
+            return None
+        out = SingleDetection(self.labels[self.i], self.scores[self.i], self.boxes[self.i])
+        self.i += 1
+        return out
+def obj_detection(image, color_conv=cv2.COLOR_BGR2RGB):
+    ''' Returns an object holding a list of detected objects '''    
     image_rgb = cv2.cvtColor(image, color_conv)
-    im_tensor = vision.TensorImage.create_from_array(image_rgb)
-    return detector.detect(im_tensor)
+    # Torch processing
+    processed_img = processor(image_rgb)
+    with torch.no_grad():
+        objects = model(**processed_img)
+    scores = objects['scores'].tolist()
+    labels = objects['labels'].tolist()
+    boxes = objects['boxes'].tolist()
+    objects = DetectedObjects(labels, scores, boxes)
+    objects.conv_xyxy_xywh()
+    return objects
+    # # TF Lite Processing
+    # im_tensor = vision.TensorImage.create_from_array(image_rgb)
+    # tflite_res = detector.detect(im_tensor)
+    # n = len(tflite_res.detections)
+    # labels = []
+    # scores = []
+    # boxes = []
+    # for i in range(n):
+    #     detection = tflite_res.detections[i]
+    #     labels += [detection.categories[0].category_name]
+    #     scores += [detection.categories[0].score]
+    #     boxes += [[detection.bounding_box.origin_x,  detection.bounding_box.origin_y,
+    #              detection.bounding_box.width, detection.bounding_box.height]]
+    # objects = DetectedObjects(labels, scores, boxes)
+    # return objects
 
 # Detecting if Boson goes off camera
 def edge_detection(x, y, w, h):
@@ -93,13 +149,13 @@ def get_grayscaled_dog(image, det_objects=None, img_size=pic_dim):
     format is img_size x img_size int-array, each 0 to 255
     '''
     if det_objects is None:
-        det_objects = tflite_obj_det(image)
+        det_objects = obj_detection(image)
     dog_bounds = []
-    for det_obj in det_objects.detections:
-        label = det_obj.categories[0].category_name
+    for det_obj in det_objects:
+        label = det_obj.label
         if label == "dog" or label == "cat":
-            square_side = max(det_obj.bounding_box.width,  det_obj.bounding_box.height)
-            dog_bounds += [[square_side, list(edge_detection(det_obj.bounding_box.origin_x,  det_obj.bounding_box.origin_y,
+            square_side = max(det_obj.box[2],  det_obj.box[3])
+            dog_bounds += [[square_side, list(edge_detection(det_obj.box[0], det_obj.box[1],
                                              square_side, square_side))]]
     if len(dog_bounds):
         dog_bounds = max(dog_bounds)[1]
@@ -134,7 +190,7 @@ while not exit_flag:
     #     take_pic_flag = True
 
     # Tensorflow
-    det_objs = tflite_obj_det(image)
+    det_objs = obj_detection(image)
     # Find the dog and check if he's sitting
     text = ""
     dog_img = get_grayscaled_dog(image, det_objs)

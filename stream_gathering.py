@@ -70,18 +70,71 @@ ret, image = cam.read()
 dispH = len(image)
 dispW = len(image[0])
 
+# function for object detection
+class DetectedObjects():
+    ''' 
+    class to read in object classification to ease
+    uniformity between tflite and pytorch
+    '''
+    class SingleDetection():
+        def __init__(self, label, score, box):
+            self.label = label
+            self.score = score
+            self.box = box
+    def __init__(self, labels, scores, boxes):
+        n = len(labels)
+        self.labels = labels
+        self.scores = scores
+        self.boxes = boxes
+        self.size = len(self.labels)
+    def conv_xyxy_xywh(self):
+        ''' Since convert from xmin, ymin, xmax, ymax to x, y, width, height '''
+        self.boxes = np.array([
+            [x, y, xmax - x, ymax - y] for x, y, xmax, ymax in self.boxes])
+    def __iter__(self):
+        self.i = 0
+        return self
+    def __next__(self):
+        if self.i >= self.size:
+            return None
+        out = SingleDetection(self.labels[self.i], self.scores[self.i], self.boxes[self.i])
+        self.i += 1
+        return out
+def obj_detection(image, color_conv=cv2.COLOR_BGR2RGB):
+    ''' Returns an object holding a list of detected objects '''    
+    image_rgb = cv2.cvtColor(image, color_conv)
+    # # Torch processing
+    # processed_img = processor(image_rgb)
+    # with torch.no_grad():
+    #     objects = model(**processed_img)
+    # scores = objects['scores'].tolist()
+    # labels = objects['labels'].tolist()
+    # boxes = objects['boxes'].tolist()
+    # objects = DetectedObjects(labels, scores, boxes)
+    # objects.conv_xyxy_xywh()
+    # return objects
+    # TF Lite Processing
+    im_tensor = vision.TensorImage.create_from_array(image_rgb)
+    tflite_res = detector.detect(im_tensor)
+    n = len(tflite_res.detections)
+    labels = []
+    scores = []
+    boxes = []
+    for i in range(n):
+        detection = tflite_res.detections[i]
+        labels += [detection.categories[0].category_name]
+        scores += [detection.categories[0].score]
+        boxes += [[detection.bounding_box.origin_x,  detection.bounding_box.origin_y,
+                 detection.bounding_box.width, detection.bounding_box.height]]
+    objects = DetectedObjects(labels, scores, boxes)
+    return objects
+
 # Detecting if Boson goes off camera
 def edge_detection(x, y, w, h):
     return (min(max(x, 0), max(dispW - w - 1, 0)),
             min(max(y, 0), max(dispH - h - 1, 0)),
             w, h)
 
-# Using Tensorflow lite for object detection
-def tflite_obj_det(image, color_conv=cv2.COLOR_BGR2RGB):
-    ''' Returns an object holding a list of detected objects '''
-    image_rgb = cv2.cvtColor(image, color_conv)
-    im_tensor = vision.TensorImage.create_from_array(image_rgb)
-    return detector.detect(im_tensor)
 # Use detections from tflite_obj_det to make a grayscaled 512x512 dog image
 def get_grayscaled_dog(image, det_objects=None, img_size=pic_dim):
     ''' 
@@ -89,13 +142,13 @@ def get_grayscaled_dog(image, det_objects=None, img_size=pic_dim):
     format is img_size x img_size int-array, each 0 to 255
     '''
     if det_objects is None:
-        det_objects = tflite_obj_det(image)
+        det_objects = obj_detection(image)
     dog_bounds = []
-    for det_obj in det_objects.detections:
-        label = det_obj.categories[0].category_name
+    for det_obj in det_objects:
+        label = det_obj.label
         if label == "dog" or label == "cat":
-            square_side = max(det_obj.bounding_box.width,  det_obj.bounding_box.height)
-            dog_bounds += [[square_side, list(edge_detection(det_obj.bounding_box.origin_x,  det_obj.bounding_box.origin_y,
+            square_side = max(det_obj.box[2],  det_obj.box[3])
+            dog_bounds += [[square_side, list(edge_detection(det_obj.box[0], det_obj.box[1],
                                              square_side, square_side))]]
     if len(dog_bounds):
         dog_bounds = max(dog_bounds)[1]
@@ -104,7 +157,6 @@ def get_grayscaled_dog(image, det_objects=None, img_size=pic_dim):
                                     dog_bounds[0]:dog_bounds[0]+dog_bounds[2]], (pic_dim, pic_dim))
         return cv2.cvtColor(dog_area, cv2.COLOR_BGR2GRAY)
     return None
-
 
 
 # Loop setup stuff
