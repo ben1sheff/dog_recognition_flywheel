@@ -8,14 +8,14 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 class StanceClassifier(nn.Module):
     def __init__(self, model_dim: (int, int)):
         super().__init__()
-        conv1_feat = 6
-        conv2_feat = 10
+        conv1_feat = 10
+        conv2_feat = 20
         k_size = 3
         self.pool_size = 3
         self.conv1 = nn.Conv2d(1, conv1_feat, k_size, 1)
         self.conv2 = nn.Conv2d(conv1_feat, conv2_feat, k_size, 1)
-        hid_lay_size = 15 # number of nodes in hidden layer
-        penult_lay_size = 15  # number of nodes in last hidden layer
+        hid_lay_size = 30 # number of nodes in hidden layer
+        penult_lay_size = 30  # number of nodes in last hidden layer
         dim_exp1 = (((model_dim[0] - self.pool_size)//self.pool_size + 1)
                     , ((model_dim[1] - self.pool_size)//self.pool_size + 1))
         dim_exp2 = (((dim_exp1[0] - self.pool_size)//self.pool_size + 1)
