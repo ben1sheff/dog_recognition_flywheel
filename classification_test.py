@@ -1,5 +1,5 @@
 import torch
-import torchvision.transforms as transforms
+# import torchvision.transforms as transforms
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,6 +16,7 @@ frac_valid = 0.2
 training_epochs = 15
 model_param_file = "model_parameters"
 pictures_file = "stream_data.hdf5"  # "pictures.hdf5"  # location of the data
+second_file = "pictures.hdf5"
 
 
 def imshow(img):
@@ -26,8 +27,11 @@ def imshow(img):
     plt.show(block=False)
 
 f = h5py.File(pictures_file, "r")
+f2 = h5py.File(second_file, "r")
 dset = np.array(f["pics"], dtype="float32")
-tags = torch.from_numpy(np.array(f["sitting"], dtype="float32"))
+dset = np.concat((dset, np.array(f2["pics"], dtype="float32")))
+tags = np.concat((np.array(f["sitting"], dtype="float32"), np.array(f2["sitting"], dtype="float32")))
+tags = torch.from_numpy(tags)
 dset = list(zip(dset, tags))
 train, valid = torch.utils.data.random_split(dset, [1-frac_valid, frac_valid])
 print("Training on", len(train), "data points, validating on", len(valid), "points")
