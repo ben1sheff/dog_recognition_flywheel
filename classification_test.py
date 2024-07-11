@@ -1,5 +1,5 @@
 import torch
-import torchvision.transforms as transforms
+# import torchvision.transforms as transforms
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,6 +15,8 @@ batch_size = 20
 frac_valid = 0.2
 training_epochs = 15
 model_param_file = "model_parameters"
+pictures_file = "stream_data.hdf5"  # "pictures.hdf5"  # location of the data
+second_file = "pictures.hdf5"
 
 
 def imshow(img):
@@ -24,9 +26,12 @@ def imshow(img):
     plt.imshow(img[0])
     plt.show(block=False)
 
-f = h5py.File("pictures.hdf5", "r")
+f = h5py.File(pictures_file, "r")
+f2 = h5py.File(second_file, "r")
 dset = np.array(f["pics"], dtype="float32")
-tags = torch.from_numpy(np.array(f["sitting"], dtype="float32"))
+dset = np.concat((dset, np.array(f2["pics"], dtype="float32")))
+tags = np.concat((np.array(f["sitting"], dtype="float32"), np.array(f2["sitting"], dtype="float32")))
+tags = torch.from_numpy(tags)
 dset = list(zip(dset, tags))
 train, valid = torch.utils.data.random_split(dset, [1-frac_valid, frac_valid])
 print("Training on", len(train), "data points, validating on", len(valid), "points")
@@ -88,15 +93,23 @@ else:
 tot = len(valid)
 correct = 0
 sit_guesses = 0
+true_sits = 0
+identified_sits = 0
 for dog, tag in valid:
     result = classifier(torch.Tensor(dog[None,:,:]))
     if (result.item() > 0.5) == (tag.item() > 0.5):
         correct += 1
     if result.item() > 0.5:
         sit_guesses += 1
-    # print(result.item()>0.5, tag.item()>0.5)
+    if tag.item() > 0.5:
+        true_sits += 1
+        if result.item() > 0.5:
+            identified_sits += 1
+    # print(np.round(result.item(), 2), result.item()>0.5, "| Actual Tag:", tag.item()>0.5)
 print(correct/tot * 100, "percent correct")
-print("guessed sit", sit_guesses / tot * 100., "percent of the time")
+print("guessed sit", np.round(sit_guesses / tot * 100.), "percent of the time")
+print("caught sitting", np.round(identified_sits / true_sits * 100.), "percent of the time")
+print("caught standing", np.round((correct - identified_sits) / (tot-true_sits) * 100.), "percent of the time")
 if len(valid) < len(dset):
     print("Should we save this? (y/n)")
     if input().startswith("y"):
