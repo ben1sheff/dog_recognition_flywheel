@@ -66,4 +66,5 @@ if re_save_flag:
     sit_set = f[sit_key]
     f[sit_key].resize(tags.shape[0], axis=0)
     f[sit_key][:] = tags[:]
+    print("overwriting data")
 del f

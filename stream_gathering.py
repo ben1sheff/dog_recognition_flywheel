@@ -9,11 +9,14 @@ import h5py
 from tflite_support.task import core, processor, vision
 import utils
 
-models = "efficientdet_lite0.tflite"
+# Notes on keys: " " toggles if sitting, "z" activates data gathering, "s" saves and quits, "q" just quits
+# If using the button, holding it down toggles sitting, as does releasing it (don't mix with space bar)
+
 # Parameters
 # Where is the camera? usually this works, but sometimes you have to find it with v4l2-ctl --list-devices
 webcam = "/dev/video0"
-# Threading for TF
+# TF
+models = "efficientdet_lite0.tflite"
 num_threads = 4
 # Display parameters
 dispW = 1280  # 1280  # 640 # 
@@ -165,10 +168,13 @@ while not exit_flag:
     cv2.imshow("Camera", image)
     # Exit and saving
     keyHit = cv2.waitKey(1)
-    if keyHit == ord(" "):
+    if keyHit == ord("z"):
         deal_with_pictures_flag = not deal_with_pictures_flag
         if not deal_with_pictures_flag:
             cv2.destroyWindow("picture")
+    if keyHit == ord(" "):
+        toggle_state()
+        printv("Sitting is", sitting_state)
     if keyHit == ord("s"):
         printv("Saving")
         if not len(pictures):
@@ -190,6 +196,7 @@ while not exit_flag:
                 sit_set.resize(sit_set.shape[0] + len(sitting), axis=0)
                 sit_set[-len(sitting):] = np.array(sitting)
             del f
-    if keyHit == ord("q") or keyHit == ord("s"):
+        leave_loop()
+    if keyHit == ord("q"):
         leave_loop()
 cv2.destroyAllWindows()
