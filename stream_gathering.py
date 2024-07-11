@@ -22,7 +22,7 @@ dispH = 720  # 720  # 480  #
 pictures_file = "stream_data.hdf5"
 dset_name = "pics"
 sit_key = "sitting"
-pic_dim = 512  # len and wid of picture
+pic_dim = 512  # len and wid of picture saved
 # fps label
 font_pos = (20, 60)
 font = cv2.FONT_HERSHEY_SIMPLEX
