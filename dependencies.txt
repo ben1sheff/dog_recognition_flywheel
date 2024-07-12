@@ -1,18 +1,19 @@
 # This list is not currently exhaustive, just wasn't thinking of this until later on in the project.
 
-# conda
+# conda #######################################
 
-# apt
+# apt #########################################
 python3-opencv
 
 
-# pip:
+# pip #########################################
 
+h5py
 gpiozero
 lgpio
 torch
 torchvision
+# For detr
 timm
 pillow
 transformers
-h5py

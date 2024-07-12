@@ -1,6 +1,5 @@
 import cv2
 import torch
-from transformers import DetrImageProcessor, DetrForObjectDetection
 import h5py
 import time
 import numpy as np
@@ -10,6 +9,9 @@ from gpiozero import Button, LED
 
 # # Note, to make tensorflow lite work on bullfrog, have to use python -m pip install --upgrade tflite-support==0.4.3
 # from tflite_support.task import core, processor, vision
+# DETR-based image processing
+# # from transformers import DetrImageProcessor, DetrForObjectDetection
+
 # import utils
 
 import stance_classifier as sc
@@ -27,9 +29,9 @@ webcam = "/dev/video0"
 # TF
 models = "efficientdet_lite0.tflite"
 num_threads = 4
-# DETR object detection
-img_processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
-object_detector = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50")
+# # DETR object detection
+# img_processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50")
+# object_detector = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50")
 # Display parameters
 dispW = 1280  # 1280  # 640 # 
 dispH = 720  # 720  # 480  #
@@ -49,6 +51,8 @@ printv = lambda *args, **kwargs: print(*args, **kwargs) if verbose else None
 # detection_options = processor.DetectionOptions(max_results=4, score_threshold = 0.3) # how many objects, how sure to be
 # options = vision.ObjectDetectorOptions(base_options=base_options, detection_options=detection_options)
 # detector = vision.ObjectDetector.create_from_options(options)
+# # openCV approach
+cv_obj_det = cv2.dnn.readNet(model="frozen_inference_graph.pb", config="ssd_mobilenet_v2_coco_2018_03_29.pbtxt.txt", framework="TensorFlow")
 
 # Initialize the button
 button = Button(18)
@@ -110,16 +114,24 @@ class DetectedObjects():
 def obj_detection(image, color_conv=cv2.COLOR_BGR2RGB):
     ''' Returns an object holding a list of detected objects '''    
     image_rgb = cv2.cvtColor(image, color_conv)
-    # Torch processing
-    processed_img = img_processor(image_rgb)
-    with torch.no_grad():
-        objects = object_detector(**processed_img)
-    scores = objects['scores'].tolist()
-    labels = objects['labels'].tolist()
-    boxes = objects['boxes'].tolist()
-    objects = DetectedObjects(labels, scores, boxes)
-    objects.conv_xyxy_xywh()
-    return objects
+    # OpenCV dNN object detection
+    blob = cv2.dnn.blobFromImage(image=image, size=(300, 300), mean=(123, 117, 104))
+    cv_obj_det.setInput(blob)
+    output = cv_obj_det.forward
+    # # DETR processing, turns out to be way too slow
+    # processed_img = img_processor(image_rgb)
+    # processed_img['pixel_values'] = torch.Tensor(np.array(processed_img['pixel_values']))
+    # processed_img['pixel_mask'] = torch.Tensor(np.array(processed_img['pixel_mask']))
+    # with torch.no_grad():
+    #     detr_out = object_detector(**processed_img)
+    #     target_sizes = (len(image), len(image[0]))
+    #     objects = img_processor.post_process_object_detection(detr_out, target_sizes=target_sizes, threshold=0.9)
+    # scores = objects['scores'].tolist()
+    # labels = objects['labels'].tolist()
+    # boxes = objects['boxes'].tolist()
+    # objects = DetectedObjects(labels, scores, boxes)
+    # objects.conv_xyxy_xywh()
+    # return objects
     # # TF Lite Processing
     # im_tensor = vision.TensorImage.create_from_array(image_rgb)
     # tflite_res = detector.detect(im_tensor)
@@ -197,7 +209,7 @@ while not exit_flag:
     #     take_pic_flag = True
 
     # object detection
-    det_objs = obj_detection(np.array(image))
+    det_objs = obj_detection(image)
     add_labels(det_objs, image)
     # Find the dog and check if he's sitting
     text = ""

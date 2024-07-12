@@ -13,9 +13,9 @@ print("loading image")
 inputs = processor(images=image, return_tensors="pt")
 print(type(inputs))
 print(inputs)
-print(inputs.shape)
-print(inputs[0])
-print(inputs[0][0])
+# print(inputs.shape)
+# print(inputs[0])
+# print(inputs[0][0])
 outputs = model(**inputs)
 
 # convert outputs (bounding boxes and class logits) to COCO API
