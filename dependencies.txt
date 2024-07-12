@@ -1,0 +1,18 @@
+# This list is not currently exhaustive, just wasn't thinking of this until later on in the project.
+
+# conda
+
+# apt
+python3-opencv
+
+
+# pip:
+
+gpiozero
+lgpio
+torch
+torchvision
+timm
+pillow
+transformers
+h5py

@@ -111,9 +111,9 @@ def obj_detection(image, color_conv=cv2.COLOR_BGR2RGB):
     ''' Returns an object holding a list of detected objects '''    
     image_rgb = cv2.cvtColor(image, color_conv)
     # Torch processing
-    processed_img = processor(image_rgb)
+    processed_img = img_processor(image_rgb)
     with torch.no_grad():
-        objects = model(**processed_img)
+        objects = object_detector(**processed_img)
     scores = objects['scores'].tolist()
     labels = objects['labels'].tolist()
     boxes = objects['boxes'].tolist()
@@ -141,6 +141,13 @@ def edge_detection(x, y, w, h):
     return (min(max(x, 0), max(dispW - w - 1, 0)),
             min(max(y, 0), max(dispH - h - 1, 0)),
             w, h)
+def add_labels(det_objs, image, color=(0, 0, 255)):
+    for det_obj in det_objs:
+        x, y, w, h = det_obj.box
+        cv2.rectangle(image, (x, y), (x + w, y + h), color)
+        cv2.putText(image, det_obj.label,
+                (x, y+40), cv2.FONT_HERSHEY_SIMPLEX, 10, 
+                color, font_weight)
 
 # Use detections from tflite_obj_det to make a grayscaled 512x512 dog image
 def get_grayscaled_dog(image, det_objects=None, img_size=pic_dim):
@@ -189,8 +196,9 @@ while not exit_flag:
     #         and time.time() > last_pic_time + 0.5)):
     #     take_pic_flag = True
 
-    # Tensorflow
-    det_objs = obj_detection(image)
+    # object detection
+    det_objs = obj_detection(np.array(image))
+    add_labels(det_objs, image)
     # Find the dog and check if he's sitting
     text = ""
     dog_img = get_grayscaled_dog(image, det_objs)
@@ -205,9 +213,8 @@ while not exit_flag:
     else:
         text = "no dog detected"
         sit_counter = 0
-
     # Display TF stuff
-    image_det = utils.visualize(image, det_objs)
+    # image_det = utils.visualize(image, det_objs)
 
 
     # Add frame rate
