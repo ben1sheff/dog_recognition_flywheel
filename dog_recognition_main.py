@@ -5,19 +5,20 @@ import time
 import numpy as np
 import torch.optim as optim
 import torch.nn as nn
-from gpiozero import Button, LED
+from gpiozero import Button, AngularServo, LED
+from gpiozero.pins.pigpio import PiGPIOFactory
+# To use pigpio, need to run the daemon, with either sudo pigpiod or enable on boot with:
+# sudo systemctl enable pigpiod
+# sudo systemctl start pigpiod
 
-# # Note, to make tensorflow lite work on bullfrog, have to use python -m pip install --upgrade tflite-support==0.4.3
-# from tflite_support.task import core, processor, vision
+# Note, to make tensorflow lite work on bullfrog, have to use python -m pip install --upgrade tflite-support==0.4.3
+from tflite_support.task import core, processor, vision
+import utils
 # DETR-based image processing
 # # from transformers import DetrImageProcessor, DetrForObjectDetection
 
-# import utils
 
 import stance_classifier as sc
-# TO DO: this currenty just draws a train vs. validation plot to
-# judge epochs of training needed. This is better done with callback
-# functions, which I'm sure pyTorch supports
 # Parameters
 model_param_file = "model_parameters"
 pictures_file = "stream_data.hdf5"  # "pictures.hdf5"  # location of the data
@@ -36,6 +37,16 @@ num_threads = 4
 dispW = 1280  # 1280  # 640 # 
 dispH = 720  # 720  # 480  #
 pic_dim = 512  # len and wid of picture
+
+# SERVO
+DEFAULT_ANGLE = 10
+TRIGGER_ANGLE = 60
+MAX_SERVO_ANGLE = 90
+SERVO_PIN = 13
+DELAY = 2
+#Flywheel
+FLYWHEEL_PIN = 19
+RAMP_TIME = 2
 # fps label
 font_pos = (20, 60)
 font = cv2.FONT_HERSHEY_SIMPLEX
@@ -46,13 +57,59 @@ font_color = (0, 155, 0)
 verbose = True
 printv = lambda *args, **kwargs: print(*args, **kwargs) if verbose else None
 
-# # Setting up object detection
-# base_options = core.BaseOptions(file_name=models, use_coral=False, num_threads=num_threads)
-# detection_options = processor.DetectionOptions(max_results=4, score_threshold = 0.3) # how many objects, how sure to be
-# options = vision.ObjectDetectorOptions(base_options=base_options, detection_options=detection_options)
-# detector = vision.ObjectDetector.create_from_options(options)
+# Flywheel
+wheel = LED(FLYWHEEL_PIN)
+#  servo for swiveling
+class Feeder():
+    def __init__(self, flywheel=wheel, resting_angle=DEFAULT_ANGLE, trigger_angle=TRIGGER_ANGLE, pin=SERVO_PIN, delay=DELAY):
+        ''' Class to handle both the servo feeding the flywheel and when to turn on the flywheel '''
+        servo_pin_factory = PiGPIOFactory()
+        self.servo = AngularServo(pin,# min_pulse_width = 0.0006, max_pulse_width=0.0023,
+                   pin_factory = servo_pin_factory)  # positive angle is anti-clockwise
+        self.resting_angle = resting_angle
+        self.trigger_angle = trigger_angle
+        self.delay = delay
+        self.armed = False
+        self.flywheel = flywheel
+        self.ready_time = time.time()
+    def arm(self, flywheel_warmup=RAMP_TIME):
+        ''' Start the flywheel and set a delay to ramp it up '''
+        self.servo.angle = self.resting_angle
+        self.flywheel.on()
+        self.ready_time = max(self.ready_time, time.time() + flywheel_warmup)
+        self.armed = True
+    def trigger(self):
+        ''' When to launch the ball, first checks that we have "armed" and readied '''
+        if self.armed and time.time() > self.ready_time:
+            self.servo.angle = self.trigger_angle
+            self.ready_time = max(self.ready_time, time.time() + self.delay)
+            self.armed = False
+            return True
+        return False
+    def update(self):
+        ''' 
+        Call this each loop iteration so we can set delays and act on them without parallelization overhead.
+        Currently it just checks if we're either ready to reset after launching or ready after the ramp up
+        time after arming
+        '''
+        if self.ready_time > 0 and time.time() > self.ready_time:
+            self.servo.angle = self.resting_angle
+            self.ready_time = -1
+            if not self.armed:
+                self.flywheel.off()
+    def cleanup(self):
+        ''' reset to our starting setup '''
+        self.flywheel.off()
+        self.servo.angle = self.resting_angle
+feeder = Feeder()
+
+# Setting up object detection
+base_options = core.BaseOptions(file_name=models, use_coral=False, num_threads=num_threads)
+detection_options = processor.DetectionOptions(max_results=4, score_threshold = 0.3) # how many objects, how sure to be
+options = vision.ObjectDetectorOptions(base_options=base_options, detection_options=detection_options)
+detector = vision.ObjectDetector.create_from_options(options)
 # # openCV approach
-cv_obj_det = cv2.dnn.readNet(model="frozen_inference_graph.pb", config="ssd_mobilenet_v2_coco_2018_03_29.pbtxt.txt", framework="TensorFlow")
+# cv_obj_det = cv2.dnn.readNet(model="frozen_inference_graph.pb", config="ssd_mobilenet_v2_coco_2018_03_29.pbtxt.txt", framework="TensorFlow")
 
 # Initialize the button
 button = Button(18)
@@ -82,16 +139,16 @@ def is_sitting(image, cutoff=confidence_req):
 
 
 # function for object detection
+class SingleDetection():
+    def __init__(self, label, score, box):
+        self.label = label
+        self.score = score
+        self.box = box
 class DetectedObjects():
     ''' 
     class to read in object classification to ease
     uniformity between tflite and pytorch
     '''
-    class SingleDetection():
-        def __init__(self, label, score, box):
-            self.label = label
-            self.score = score
-            self.box = box
     def __init__(self, labels, scores, boxes):
         n = len(labels)
         self.labels = labels
@@ -107,17 +164,18 @@ class DetectedObjects():
         return self
     def __next__(self):
         if self.i >= self.size:
-            return None
+            raise StopIteration
         out = SingleDetection(self.labels[self.i], self.scores[self.i], self.boxes[self.i])
         self.i += 1
         return out
 def obj_detection(image, color_conv=cv2.COLOR_BGR2RGB):
     ''' Returns an object holding a list of detected objects '''    
     image_rgb = cv2.cvtColor(image, color_conv)
-    # OpenCV dNN object detection
-    blob = cv2.dnn.blobFromImage(image=image, size=(300, 300), mean=(123, 117, 104))
-    cv_obj_det.setInput(blob)
-    output = cv_obj_det.forward
+    # # OpenCV dNN object detection
+    # blob = cv2.dnn.blobFromImage(image=image, size=(300, 300), mean=(123, 117, 104))
+    # cv_obj_det.setInput(blob)
+    # output = cv_obj_det.forward
+
     # # DETR processing, turns out to be way too slow
     # processed_img = img_processor(image_rgb)
     # processed_img['pixel_values'] = torch.Tensor(np.array(processed_img['pixel_values']))
@@ -132,21 +190,22 @@ def obj_detection(image, color_conv=cv2.COLOR_BGR2RGB):
     # objects = DetectedObjects(labels, scores, boxes)
     # objects.conv_xyxy_xywh()
     # return objects
-    # # TF Lite Processing
-    # im_tensor = vision.TensorImage.create_from_array(image_rgb)
-    # tflite_res = detector.detect(im_tensor)
-    # n = len(tflite_res.detections)
-    # labels = []
-    # scores = []
-    # boxes = []
-    # for i in range(n):
-    #     detection = tflite_res.detections[i]
-    #     labels += [detection.categories[0].category_name]
-    #     scores += [detection.categories[0].score]
-    #     boxes += [[detection.bounding_box.origin_x,  detection.bounding_box.origin_y,
-    #              detection.bounding_box.width, detection.bounding_box.height]]
-    # objects = DetectedObjects(labels, scores, boxes)
-    # return objects
+
+    # TF Lite Processing
+    im_tensor = vision.TensorImage.create_from_array(image_rgb)
+    tflite_res = detector.detect(im_tensor)
+    n = len(tflite_res.detections)
+    labels = []
+    scores = []
+    boxes = []
+    for i in range(n):
+        detection = tflite_res.detections[i]
+        labels += [detection.categories[0].category_name]
+        scores += [detection.categories[0].score]
+        boxes += [[detection.bounding_box.origin_x,  detection.bounding_box.origin_y,
+                 detection.bounding_box.width, detection.bounding_box.height]]
+    objects = DetectedObjects(labels, scores, boxes)
+    return objects
 
 # Detecting if Boson goes off camera
 def edge_detection(x, y, w, h):
@@ -158,8 +217,8 @@ def add_labels(det_objs, image, color=(0, 0, 255)):
         x, y, w, h = det_obj.box
         cv2.rectangle(image, (x, y), (x + w, y + h), color)
         cv2.putText(image, det_obj.label,
-                (x, y+40), cv2.FONT_HERSHEY_SIMPLEX, 10, 
-                color, font_weight)
+                (x, y+20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, 
+                color, 2)
 
 # Use detections from tflite_obj_det to make a grayscaled 512x512 dog image
 def get_grayscaled_dog(image, det_objects=None, img_size=pic_dim):
@@ -189,6 +248,7 @@ def get_grayscaled_dog(image, det_objects=None, img_size=pic_dim):
 # last_pic_time = time.time()  # Bring back to force a delay between readings, like requiring he sit for a period of time
 exit_flag = False
 fps = 0  # Start
+motor_flag = False
 timer = time.time()
 sit_counter = 0
 # How to leave the loop
@@ -196,6 +256,7 @@ def leave_loop():
     global exit_flag
     exit_flag = True
     cv2.destroyAllWindows()
+    feeder.cleanup()
 
 while not exit_flag:
     ret, image = cam.read()
@@ -219,15 +280,22 @@ while not exit_flag:
         if is_sitting(dog_img):
             sit_counter += 1
             text = "dog has been sitting " + str(sit_counter) + " frames."
+            if sit_counter == 5:
+                feeder.trigger()
         else:
             text = "dog is not sitting"
             sit_counter = 0
+            # if motor_flag:
+            #     motor.off()
+
     else:
         text = "no dog detected"
         sit_counter = 0
+        # if motor_flag:
+        #     motor.off()
     # Display TF stuff
     # image_det = utils.visualize(image, det_objs)
-
+    feeder.update()
 
     # Add frame rate
     timer2 = time.time()
@@ -246,6 +314,8 @@ while not exit_flag:
     #     deal_with_pictures_flag = not deal_with_pictures_flag
     #     if not deal_with_pictures_flag:
     #         cv2.destroyWindow("picture")
+    if keyHit == ord("a"):
+        feeder.arm()
     if keyHit == ord("q") or keyHit == ord("s"):
         leave_loop()
 cv2.destroyAllWindows()
