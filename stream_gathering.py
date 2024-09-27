@@ -71,16 +71,16 @@ dispH = len(image)
 dispW = len(image[0])
 
 # function for object detection
+class SingleDetection():
+    def __init__(self, label, score, box):
+        self.label = label
+        self.score = score
+        self.box = box
 class DetectedObjects():
     ''' 
     class to read in object classification to ease
     uniformity between tflite and pytorch
     '''
-    class SingleDetection():
-        def __init__(self, label, score, box):
-            self.label = label
-            self.score = score
-            self.box = box
     def __init__(self, labels, scores, boxes):
         n = len(labels)
         self.labels = labels
@@ -96,7 +96,7 @@ class DetectedObjects():
         return self
     def __next__(self):
         if self.i >= self.size:
-            return None
+            raise StopIteration
         out = SingleDetection(self.labels[self.i], self.scores[self.i], self.boxes[self.i])
         self.i += 1
         return out
@@ -134,6 +134,13 @@ def edge_detection(x, y, w, h):
     return (min(max(x, 0), max(dispW - w - 1, 0)),
             min(max(y, 0), max(dispH - h - 1, 0)),
             w, h)
+def add_labels(det_objs, image, color=(0, 0, 255)):
+    for det_obj in det_objs:
+        x, y, w, h = det_obj.box
+        cv2.rectangle(image, (x, y), (x + w, y + h), color)
+        cv2.putText(image, det_obj.label,
+                (x, y+20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, 
+                color, 2)
 
 # Use detections from tflite_obj_det to make a grayscaled 512x512 dog image
 def get_grayscaled_dog(image, det_objects=None, img_size=pic_dim):
@@ -189,10 +196,10 @@ while not exit_flag:
             and time.time() > last_pic_time + 0.5)):
         take_pic_flag = True
     # Tensorflow
-    det_objs = tflite_obj_det(image)
-    # Do something with the data
+    det_objs = obj_detection(image)
     # Find the dog and photograph him
-    if deal_with_pictures_flag and take_pic_flag:
+    if deal_with_pictures_flag and take_pic_flag :
+        # cv2.imshow("picture", dog_img)
         dog_img = get_grayscaled_dog(image, det_objs)
         if dog_img is not None:
             cv2.imshow("picture", dog_img)
@@ -204,14 +211,18 @@ while not exit_flag:
         take_pic_flag = False
         last_pic_time = time.time()
     # Display TF stuff
-    image_det = utils.visualize(image, det_objs)
+    add_labels(det_objs, image)
 
 
     # Add frame rate
     timer2 = time.time()
     dt = timer2 - timer
     fps = 0.9 * fps + 0.1/ dt
-    cv2.putText(image, str(int(np.round(fps))) + " FPS. Button takes a picture, again confirms",
+    text = str(int(np.round(fps))) + " FPS. "
+    text += "z: " + ("stop" if deal_with_pictures_flag else "start") + " pictures. "
+    text += "Space: mark " +(" is" if sitting_state else "not") +  " sitting. "
+    text += "s: save, q: quit"
+    cv2.putText(image, text,
                 font_pos, cv2.FONT_HERSHEY_SIMPLEX, font_size, 
                 font_color, font_weight)
     timer = timer2
@@ -247,6 +258,7 @@ while not exit_flag:
                 sit_set = f[sit_key]
                 sit_set.resize(sit_set.shape[0] + len(sitting), axis=0)
                 sit_set[-len(sitting):] = np.array(sitting)
+                printv("We now have", dset.shape[0], "pictures")
             del f
         leave_loop()
     if keyHit == ord("q"):

@@ -11,6 +11,7 @@ python3-opencv
 h5py
 gpiozero
 lgpio
+pigpio (then have to set up daemon with sudo pigpiod)
 torch
 torchvision
 # For detr

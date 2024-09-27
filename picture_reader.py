@@ -53,7 +53,7 @@ while not exit_flag:
                         (font_pos[0], font_pos[1] + 30),
                          cv2.FONT_HERSHEY_SIMPLEX, font_size, 
                         font_color, font_weight)
-        cv2.putText(image, "dog " + str(picture_ind),
+        cv2.putText(image, "dog " + str(picture_ind) + " n: next, b: back, c:cut, s: save, q: quit",
                     font_pos, cv2.FONT_HERSHEY_SIMPLEX, font_size, 
                     font_color, font_weight)
         cv2.imshow("picture", image)

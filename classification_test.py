@@ -11,9 +11,9 @@ import stance_classifier as sc
 # judge epochs of training needed. This is better done with callback
 # functions, which I'm sure pyTorch supports
 # Parameters
-batch_size = 20
+batch_size = 50
 frac_valid = 0.2
-training_epochs = 15
+training_epochs = 20
 model_param_file = "model_parameters"
 pictures_file = "stream_data.hdf5"  # "pictures.hdf5"  # location of the data
 second_file = "pictures.hdf5"
